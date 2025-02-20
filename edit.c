@@ -51,7 +51,12 @@ void setup() {
 void listFiles(const char *path) {
     if (!sd_initialized) return; // Kiểm tra nếu thẻ nhớ chưa được khởi tạo thì không chạy tiếp
 
-    lv_list_clean(file_list);
+    lv_obj_t *child;
+    while ((child = lv_obj_get_child(file_list, 0)) != NULL) {
+        lv_obj_del(child);
+    }
+
+    
     if (strcmp(path, "/") != 0) {
         lv_obj_t *btn = lv_list_add_btn(file_list, LV_SYMBOL_LEFT, "..");
         lv_obj_add_event_cb(btn, [](lv_event_t *e) {
