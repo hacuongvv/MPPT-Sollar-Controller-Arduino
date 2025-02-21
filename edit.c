@@ -5,12 +5,12 @@
 TFT_eSPI tft = TFT_eSPI();
 TAMC_GT911 touch = TAMC_GT911(21, 22, 36, 320, 480);
 
-lv_obj_t *tabview;
+lv_obj_t *container_auto, *container_manual;
 lv_obj_t *lbl_coords, *lbl_status;
-lv_obj_t *btn_run_auto, *btn_run_manual;
+lv_obj_t *btn_switch, *btn_run_auto, *btn_run_manual;
 lv_obj_t *speed_slider;
-
 bool is_running = false; // Trạng thái máy CNC
+bool is_auto_mode = true; // Chế độ hiện tại (Auto / Manual)
 
 void update_coordinates(float x, float y, float z) {
     static char buffer[50];
@@ -31,22 +31,21 @@ void toggle_run(lv_event_t *e) {
     lv_label_set_text(lv_obj_get_child(btn_run_auto, 0), btn_text);
     lv_label_set_text(lv_obj_get_child(btn_run_manual, 0), btn_text);
 
-    lv_obj_add_flag(tabview, is_running ? LV_OBJ_FLAG_CLICK_FOCUSABLE : 0);
+    lv_obj_add_flag(btn_switch, is_running ? LV_OBJ_FLAG_HIDDEN : 0);
 }
 
-void speed_slider_event(lv_event_t *e) {
-    int speed = lv_slider_get_value(speed_slider);
-    Serial.printf("Tốc độ: %d\n", speed);
+void switch_mode(lv_event_t *e) {
+    if (is_running) return;
+
+    is_auto_mode = !is_auto_mode;
+    lv_obj_add_flag(is_auto_mode ? container_manual : container_auto, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(is_auto_mode ? container_auto : container_manual, LV_OBJ_FLAG_HIDDEN);
+
+    const char *mode_text = is_auto_mode ? "Manual" : "Auto";
+    lv_label_set_text(lv_obj_get_child(btn_switch, 0), mode_text);
 }
 
-void manual_move_event(lv_event_t *e) {
-    if (is_running) return; // Không điều khiển nếu máy đang chạy
-    lv_obj_t *btn = lv_event_get_target(e);
-    const char *txt = lv_label_get_text(lv_obj_get_child(btn, 0));
-    Serial.printf("Điều khiển: %s\n", txt);
-}
-
-void create_auto_tab(lv_obj_t *parent) {
+void create_auto_screen(lv_obj_t *parent) {
     lbl_coords = lv_label_create(parent);
     lv_obj_align(lbl_coords, LV_ALIGN_TOP_MID, 0, 10);
     update_coordinates(0, 0, 0);
@@ -57,24 +56,27 @@ void create_auto_tab(lv_obj_t *parent) {
 
     btn_run_auto = lv_btn_create(parent);
     lv_obj_set_size(btn_run_auto, 100, 50);
-    lv_obj_align(btn_run_auto, LV_ALIGN_LEFT_MID, 30, 0);
+    lv_obj_align(btn_run_auto, LV_ALIGN_BOTTOM_MID, -60, -20);
     lv_label_set_text(lv_label_create(btn_run_auto), "Chạy");
     lv_obj_add_event_cb(btn_run_auto, toggle_run, LV_EVENT_CLICKED, NULL);
 }
 
-void create_manual_tab(lv_obj_t *parent) {
+void create_manual_screen(lv_obj_t *parent) {
     static const char *btn_labels[] = {"X+", "X-", "Y+", "Y-", "Z+", "Z-"};
     for (int i = 0; i < 6; i++) {
         lv_obj_t *btn = lv_btn_create(parent);
         lv_obj_set_size(btn, 80, 50);
         lv_obj_align(btn, LV_ALIGN_CENTER, (i % 2) * 100 - 50, (i / 2) * 60 - 60);
         lv_label_set_text(lv_label_create(btn), btn_labels[i]);
-        lv_obj_add_event_cb(btn, manual_move_event, LV_EVENT_CLICKED, NULL);
     }
+
+    speed_slider = lv_slider_create(parent);
+    lv_obj_set_width(speed_slider, 200);
+    lv_obj_align(speed_slider, LV_ALIGN_BOTTOM_MID, 0, -60);
 
     btn_run_manual = lv_btn_create(parent);
     lv_obj_set_size(btn_run_manual, 100, 50);
-    lv_obj_align(btn_run_manual, LV_ALIGN_BOTTOM_MID, 0, -20);
+    lv_obj_align(btn_run_manual, LV_ALIGN_BOTTOM_MID, -60, -20);
     lv_label_set_text(lv_label_create(btn_run_manual), "Chạy");
     lv_obj_add_event_cb(btn_run_manual, toggle_run, LV_EVENT_CLICKED, NULL);
 }
@@ -104,12 +106,20 @@ void setup() {
     indev_drv.read_cb = touch_read;
     lv_indev_drv_register(&indev_drv);
 
-    tabview = lv_tabview_create(lv_scr_act(), LV_DIR_TOP, 50);
-    lv_obj_t *tab_auto = lv_tabview_add_tab(tabview, "Auto");
-    lv_obj_t *tab_manual = lv_tabview_add_tab(tabview, "Manual");
+    container_auto = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(container_auto, 480, 320);
+    create_auto_screen(container_auto);
 
-    create_auto_tab(tab_auto);
-    create_manual_tab(tab_manual);
+    container_manual = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(container_manual, 480, 320);
+    create_manual_screen(container_manual);
+    lv_obj_add_flag(container_manual, LV_OBJ_FLAG_HIDDEN);
+
+    btn_switch = lv_btn_create(lv_scr_act());
+    lv_obj_set_size(btn_switch, 100, 50);
+    lv_obj_align(btn_switch, LV_ALIGN_BOTTOM_MID, 60, -20);
+    lv_label_set_text(lv_label_create(btn_switch), "Manual");
+    lv_obj_add_event_cb(btn_switch, switch_mode, LV_EVENT_CLICKED, NULL);
 }
 
 void loop() {
